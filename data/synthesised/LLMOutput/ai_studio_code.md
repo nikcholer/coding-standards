@@ -1,4 +1,3 @@
----
 # Coding Standards Decision Register
 ## rust-lang/rust — June 2014 to July 2014
 
