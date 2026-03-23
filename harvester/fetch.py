@@ -20,7 +20,7 @@ def fetch_issue_comments(
         records.append(IssueCommentRecord(
             pr_number=pr_number,
             id=comment["id"],
-            author=comment["user"]["login"],
+            author=(comment["user"] or {}).get("login", "[deleted]"),
             author_association=comment.get("author_association", ""),
             body=comment.get("body", ""),
             created_at=comment["created_at"],
@@ -39,7 +39,7 @@ def fetch_review_comments(
         records.append(ReviewCommentRecord(
             pr_number=pr_number,
             id=comment["id"],
-            author=comment["user"]["login"],
+            author=(comment["user"] or {}).get("login", "[deleted]"),
             author_association=comment.get("author_association", ""),
             body=comment.get("body", ""),
             created_at=comment["created_at"],
