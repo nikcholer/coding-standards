@@ -2,6 +2,7 @@ data/raw/*
 !data/raw/.gitkeep
 data/synthesised/*
 !data/synthesised/.gitkeep
+!data/synthesised/LLMOutput/
 logs/
 .env
 __pycache__/
