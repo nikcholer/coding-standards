@@ -24,7 +24,7 @@ The result is:
 The pipeline has four phases:
 
 ```
-GitHub PRs  →  Harvest  →  Classify  →  Synthesise  →  Output
+GitHub PRs  →  Harvest  →  Synthesise  →  [Human review]  →  agents.md
 ```
 
 ### Phase 1 — Harvest `[implemented]`
@@ -36,15 +36,16 @@ Pulls merged PRs from a GitHub repository using the REST API, extracting all thr
 
 Output lands in `data/raw/` as three JSONL files. Resumable after interruption via `.progress`.
 
-### Phase 2 — Synthesise `[implemented: prompt generation]`
+### Phase 2 — Synthesise `[implemented]`
 
-Reads the harvested corpus and produces a carefully structured prompt for any reasoning LLM. The prompt asks the model to identify recurring reviewer patterns and extract them as candidate norms in a defined schema.
+Reads the harvested corpus, samples by reviewer authority (prioritising `OWNER`/`MEMBER` comments as the highest-signal evidence), and produces two structured prompts for any reasoning LLM:
 
-Output lands in `data/synthesised/` as:
-- `prompt.json` — `{"system": "...", "user": "..."}` for any chat-completion API
-- `prompt.md` — human-readable version for copy/paste into a web UI
+- **`register_prompt`** — asks the LLM to produce a human-readable decision register: candidate standards with verbatim evidence quotes, conflict flags, tooling recommendations, and a consolidated list of items needing human resolution. This is the primary output for senior engineer review.
+- **`norm_extraction_prompt`** — asks the LLM to produce a structured JSON array of norms for machine processing in later pipeline stages.
 
-This phase is deliberately LLM-agnostic. The prompt can be sent to GPT-4o, Gemini, Claude, Llama, or any other capable model.
+Both prompts are written as `{system, user}` JSON (for any chat-completion API) and as `.md` (for copy/paste into a web UI). Deliberately LLM-agnostic — GPT-4o, Gemini, Claude, Llama, or any capable model will work.
+
+**Sample output** from Gemini 2.5 Pro against `rust-lang/rust` is available in [`data/synthesised/LLMOutput/`](./data/synthesised/LLMOutput/) — showing 6 candidate standards, a correctly surfaced line-length conflict with contradicting quotes from the same reviewer on different PRs, and a clean separation of tooling concerns from principles.
 
 ### Phase 3 — Classify `[planned]`
 
@@ -53,7 +54,7 @@ Separate style signals from one-off engineering judgements. Tag each comment by 
 ### Phase 4 — Output `[planned]`
 
 Produce two artefacts:
-1. **Human decision register** — candidate rules with evidence, confidence scores, proponents, opponents, and explicit contradictions for human resolution
+1. **Human decision register** — candidate rules with evidence counts, proponents, opponents, and explicit contradictions for human resolution
 2. **`agents.md`** — compact operational policy for coding agents
 
 ---
@@ -71,21 +72,29 @@ $env:GITHUB_TOKEN = "ghp_..."    # PowerShell
 # Run the harvester (defaults to rust-lang/rust, 2014-06-01..2014-08-31)
 python -m harvester
 
-# Build the synthesis prompt
+# Build the synthesis prompts
 python -m synthesiser
+
+# Send the decision register prompt to your preferred LLM
+# e.g. paste data/synthesised/register_prompt.md into any web UI,
+# or POST data/synthesised/register_prompt.json to any chat-completion API
 ```
 
 Outputs:
 ```
 data/raw/
-  prs.jsonl                   PR metadata
-  issue_comments.jsonl        General thread comments
-  review_comments.jsonl       Inline diff comments
+  prs.jsonl                        PR metadata
+  issue_comments.jsonl             General thread comments
+  review_comments.jsonl            Inline diff comments
 
 data/synthesised/
-  prompt.json                 {system, user} for any LLM API
-  prompt.md                   Human-readable version
+  register_prompt.json             {system, user} -> human decision register
+  register_prompt.md               Human-readable version for copy/paste
+  norm_extraction_prompt.json      {system, user} -> JSON norms array
+  norm_extraction_prompt.md        Human-readable version
 ```
+
+The `register_prompt` is the primary output at this stage. Run it against any capable LLM to produce a human-reviewable decision register — see [`data/synthesised/LLMOutput/`](./data/synthesised/LLMOutput/) for an example.
 
 ### Configuring the target repository
 
@@ -146,11 +155,12 @@ The `type` field is the most important guard against producing bad policy. A `pr
 ## Repository Structure
 
 ```
-harvester/          Phase 1 — GitHub API data collection
-synthesiser/        Phase 2 — LLM prompt construction
-planning/           Source planning documents (see MAKING_OF.md)
-data/raw/           Harvested JSONL output (gitignored)
-data/synthesised/   Generated prompts (gitignored)
+harvester/                        Phase 1 — GitHub API data collection
+synthesiser/                      Phase 2 — LLM prompt construction
+planning/                         Source planning documents (see MAKING_OF.md)
+data/raw/                         Harvested JSONL output (gitignored)
+data/synthesised/                 Generated prompts (gitignored)
+data/synthesised/LLMOutput/       Sample LLM output committed as demo
 ```
 
 ---
@@ -176,13 +186,15 @@ data/synthesised/   Generated prompts (gitignored)
 |---|---|
 | Harvest (GitHub REST API) | Complete |
 | Synthesis prompt generation | Complete |
+| LLM-generated decision register | **Viable end-to-end** — see sample output |
 | Comment classification | Planned |
 | Norm clustering & scoring | Planned |
 | Conflict detection | Planned |
-| Human decision register | Planned |
-| `agents.md` generation | Planned |
+| Automated `agents.md` generation | Planned |
 
-The project was validated with a trial run against `rust-lang/rust` (June–August 2014), which produced 651 review comments across ~80 PRs — sufficient to generate a meaningful synthesis prompt.
+**The pipeline is runnable end-to-end today** from `python -m harvester` through to a human-reviewable decision register. Phases 3 and 4 automate what currently requires a human to review the LLM output and ratify candidates — which is intentional: the human ratification step is what gives the resulting `agents.md` its legitimacy.
+
+The pipeline was validated against `rust-lang/rust` (June–August 2014), producing 2,139 review comments sampled down to 500 high-authority comments (~29K tokens) for the synthesis prompt. Sample output is in [`data/synthesised/LLMOutput/`](./data/synthesised/LLMOutput/).
 
 ---
 
